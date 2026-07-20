@@ -1,0 +1,640 @@
+"""
+app.py
+------
+Marketing Calendar Hold Builder — Streamlit front-end.
+
+Run locally:
+    streamlit run app.py
+
+Generates:
+  - Downloadable ICS file
+  - Google Calendar add-event link
+  - Outlook Web App add-event link
+  - Copyable plain-text links
+  - HTML "Add to Calendar" button (Marketo-safe)
+  - Human-readable event preview
+"""
+
+import json
+import zoneinfo
+from datetime import datetime, date, time, timedelta
+from pathlib import Path
+
+import streamlit as st
+
+from calendar_utils import (
+    build_ics,
+    build_google_url,
+    build_outlook_url,
+    build_html_button,
+    build_utm_url,
+    build_event_preview,
+    validate_event,
+    localize,
+)
+
+# ---------------------------------------------------------------------------
+# Page config
+# ---------------------------------------------------------------------------
+
+st.set_page_config(
+    page_title="Marketing Calendar Hold Builder",
+    page_icon="📅",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+
+HISTORY_FILE = Path("recent_events.json")
+MAX_HISTORY = 10  # Maximum number of recent events to store
+
+# ---------------------------------------------------------------------------
+# All IANA timezones (sorted, common ones first)
+# ---------------------------------------------------------------------------
+
+COMMON_TZ = [
+    "America/New_York",
+    "America/Chicago",
+    "America/Denver",
+    "America/Los_Angeles",
+    "America/Phoenix",
+    "America/Anchorage",
+    "Pacific/Honolulu",
+    "Europe/London",
+    "Europe/Paris",
+    "Europe/Berlin",
+    "Asia/Tokyo",
+    "Asia/Shanghai",
+    "Asia/Kolkata",
+    "Australia/Sydney",
+    "UTC",
+]
+
+ALL_TZ = sorted(zoneinfo.available_timezones())
+TZ_OPTIONS = COMMON_TZ + ["─────────────────"] + [z for z in ALL_TZ if z not in COMMON_TZ]
+
+# ---------------------------------------------------------------------------
+# Event templates
+# ---------------------------------------------------------------------------
+
+TEMPLATES = {
+    "── Select a template ──": {},
+    "Webinar": {
+        "title": "Webinar: [Topic Name]",
+        "description": (
+            "Join us for an informative webinar on [Topic Name].\n\n"
+            "What you'll learn:\n"
+            "• [Key point 1]\n"
+            "• [Key point 2]\n"
+            "• [Key point 3]\n\n"
+            "Seats are limited — register today!"
+        ),
+        "location": "",
+        "reminder_minutes": 15,
+        "campaign_id": "WEB-2024-",
+    },
+    "In-Person Event": {
+        "title": "[Event Name]",
+        "description": (
+            "Join us in person for [Event Name].\n\n"
+            "Agenda:\n"
+            "• [Session 1]\n"
+            "• [Session 2]\n"
+            "• Networking\n\n"
+            "Please arrive 10 minutes early."
+        ),
+        "location": "[Venue Name], [Address], [City, State ZIP]",
+        "reminder_minutes": 60,
+        "campaign_id": "EVT-2024-",
+    },
+    "Product Launch": {
+        "title": "[Product Name] Launch",
+        "description": (
+            "We're excited to announce the launch of [Product Name]!\n\n"
+            "Join us to learn about new features, see live demos, and hear "
+            "from the product team.\n\n"
+            "Don't miss this exciting milestone."
+        ),
+        "location": "",
+        "reminder_minutes": 30,
+        "campaign_id": "LAUNCH-2024-",
+    },
+    "Customer Session": {
+        "title": "Customer Session: [Customer Name]",
+        "description": (
+            "Dedicated session for [Customer Name].\n\n"
+            "Agenda:\n"
+            "• Review & check-in\n"
+            "• Product updates\n"
+            "• Q&A\n\n"
+            "Please come prepared with questions."
+        ),
+        "location": "",
+        "reminder_minutes": 15,
+        "campaign_id": "CUST-2024-",
+    },
+    "Internal Meeting": {
+        "title": "Team Sync: [Topic]",
+        "description": (
+            "Recurring team sync to discuss [Topic].\n\n"
+            "Agenda:\n"
+            "• Status updates\n"
+            "• Blockers\n"
+            "• Action items"
+        ),
+        "location": "",
+        "reminder_minutes": 10,
+        "campaign_id": "INT-2024-",
+    },
+}
+
+# Reminder options — displayed as human-friendly labels, stored as int minutes
+REMINDER_OPTIONS = {
+    "No reminder": None,
+    "5 minutes before": 5,
+    "10 minutes before": 10,
+    "15 minutes before": 15,
+    "30 minutes before": 30,
+    "1 hour before": 60,
+    "2 hours before": 120,
+    "1 day before": 1440,
+    "2 days before": 2880,
+}
+
+# ---------------------------------------------------------------------------
+# Recent events persistence (no PII stored)
+# ---------------------------------------------------------------------------
+
+def load_history() -> list[dict]:
+    """Load recent event history from local JSON file."""
+    if HISTORY_FILE.exists():
+        try:
+            return json.loads(HISTORY_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            return []
+    return []
+
+
+def save_to_history(entry: dict) -> None:
+    """Persist a sanitized event entry (no PII) to local history.
+
+    Stores: title, event_type, start_str, end_str, timezone, campaign_id.
+    Does NOT store: organizer email, attendees, or meeting URLs.
+    """
+    safe_entry = {
+        "title": entry.get("title", ""),
+        "start_str": entry.get("start_str", ""),
+        "end_str": entry.get("end_str", ""),
+        "timezone": entry.get("timezone", ""),
+        "campaign_id": entry.get("campaign_id", ""),
+        "saved_at": datetime.utcnow().isoformat() + "Z",
+    }
+    history = load_history()
+    history.insert(0, safe_entry)
+    history = history[:MAX_HISTORY]
+    try:
+        HISTORY_FILE.write_text(json.dumps(history, indent=2))
+    except OSError:
+        pass  # Non-fatal — history is a convenience feature only
+
+
+# ---------------------------------------------------------------------------
+# Clipboard copy helper (uses Streamlit + JS)
+# ---------------------------------------------------------------------------
+
+COPY_BUTTON_COUNTER = 0  # used to give each copy button a unique key
+
+
+def copy_button(text: str, label: str = "📋 Copy", key: str = "") -> None:
+    """Render a small copy-to-clipboard button using Streamlit components."""
+    global COPY_BUTTON_COUNTER
+    COPY_BUTTON_COUNTER += 1
+    unique_key = key or f"copy_{COPY_BUTTON_COUNTER}"
+
+    # Encode text for safe embedding in JS
+    import json as _json
+    js_text = _json.dumps(text)  # proper JS string with escaping
+
+    copy_js = f"""
+    <script>
+    function copyText_{unique_key}() {{
+        var text = {js_text};
+        if (navigator.clipboard && window.isSecureContext) {{
+            navigator.clipboard.writeText(text).then(function() {{
+                var btn = document.getElementById('btn_{unique_key}');
+                var orig = btn.innerText;
+                btn.innerText = '✅ Copied!';
+                setTimeout(function() {{ btn.innerText = orig; }}, 1500);
+            }});
+        }} else {{
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            var btn = document.getElementById('btn_{unique_key}');
+            var orig = btn.innerText;
+            btn.innerText = '✅ Copied!';
+            setTimeout(function() {{ btn.innerText = orig; }}, 1500);
+        }}
+    }}
+    </script>
+    <button id="btn_{unique_key}"
+            onclick="copyText_{unique_key}()"
+            style="padding:4px 12px;font-size:12px;cursor:pointer;
+                   border:1px solid #ccc;border-radius:4px;background:#f8f8f8;">
+        {label}
+    </button>
+    """
+    st.components.v1.html(copy_js, height=36)
+
+
+# ---------------------------------------------------------------------------
+# Main app
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    # ── Header ──────────────────────────────────────────────────────────────
+    st.title("📅 Marketing Calendar Hold Builder")
+    st.caption(
+        "Create calendar assets for webinars, events, launches, customer sessions, "
+        "and internal meetings. Generates ICS files and add-to-calendar links for "
+        "Google, Outlook, and Apple Calendar."
+    )
+    st.divider()
+
+    # ── Sidebar: Template picker + recent events ─────────────────────────────
+    with st.sidebar:
+        st.header("Templates")
+        selected_template = st.selectbox(
+            "Load a template",
+            options=list(TEMPLATES.keys()),
+            key="template_select",
+            help="Pre-fill the form with a starting point for common event types.",
+        )
+
+        st.divider()
+        st.header("Recent Events")
+        history = load_history()
+        if history:
+            for item in history:
+                with st.expander(f"📌 {item.get('title', 'Untitled')[:40]}"):
+                    st.caption(f"**When:** {item.get('start_str', '')} ({item.get('timezone', '')})")
+                    if item.get("campaign_id"):
+                        st.caption(f"**Campaign:** {item['campaign_id']}")
+                    st.caption(f"Saved: {item.get('saved_at', '')[:10]}")
+        else:
+            st.caption("No recent events yet. Generated events will appear here.")
+
+    # ── Determine template defaults ──────────────────────────────────────────
+    tmpl = TEMPLATES.get(selected_template, {})
+
+    # ── Form ─────────────────────────────────────────────────────────────────
+    with st.form("event_form", clear_on_submit=False):
+        # ── Event Details ──────────────────────────────────────────────────
+        st.subheader("Event Details")
+
+        title = st.text_input(
+            "Event Title *",
+            value=tmpl.get("title", ""),
+            placeholder="e.g. Q3 Product Webinar",
+            help="Required. The title will appear in all calendar apps.",
+        )
+
+        col_allday, _ = st.columns([1, 3])
+        with col_allday:
+            all_day = st.checkbox("All-day event", value=False)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**Start Date & Time** *")
+            start_date = st.date_input(
+                "Start date",
+                value=date.today() + timedelta(days=7),
+                label_visibility="collapsed",
+                key="start_date",
+            )
+            if not all_day:
+                start_time_val = st.time_input(
+                    "Start time",
+                    value=time(10, 0),
+                    label_visibility="collapsed",
+                    key="start_time",
+                    step=300,  # 5-minute increments
+                )
+            else:
+                start_time_val = time(0, 0)
+
+        with col2:
+            st.markdown("**End Date & Time** *")
+            end_date = st.date_input(
+                "End date",
+                value=date.today() + timedelta(days=7),
+                label_visibility="collapsed",
+                key="end_date",
+            )
+            if not all_day:
+                end_time_val = st.time_input(
+                    "End time",
+                    value=time(11, 0),
+                    label_visibility="collapsed",
+                    key="end_time",
+                    step=300,
+                )
+            else:
+                end_time_val = time(0, 0)
+
+        # Timezone
+        default_tz = "America/Chicago"
+        tz_index = TZ_OPTIONS.index(default_tz) if default_tz in TZ_OPTIONS else 0
+        timezone = st.selectbox(
+            "Time Zone *",
+            options=TZ_OPTIONS,
+            index=tz_index,
+            help="Select the IANA timezone for this event. Common timezones are listed first.",
+        )
+        # Guard against the separator being selected
+        if timezone.startswith("─"):
+            timezone = "UTC"
+
+        # ── Location & Virtual ────────────────────────────────────────────
+        st.subheader("Location")
+        col3, col4 = st.columns(2)
+        with col3:
+            location = st.text_input(
+                "Physical Location",
+                value=tmpl.get("location", ""),
+                placeholder="e.g. 100 Main St, Chicago, IL 60601",
+                help="Leave blank for virtual-only events.",
+            )
+        with col4:
+            meeting_url = st.text_input(
+                "Virtual Meeting URL",
+                value="",
+                placeholder="https://zoom.us/j/...",
+                help="Zoom, Teams, Google Meet, etc. Leave blank for in-person events.",
+            )
+
+        # ── Description ───────────────────────────────────────────────────
+        st.subheader("Description")
+        description = st.text_area(
+            "Event Description",
+            value=tmpl.get("description", ""),
+            height=150,
+            placeholder="Describe the event. What will attendees learn or experience?",
+        )
+
+        # ── Organizer ─────────────────────────────────────────────────────
+        st.subheader("Organizer")
+        col5, col6 = st.columns(2)
+        with col5:
+            organizer_name = st.text_input(
+                "Organizer Name *",
+                placeholder="Jane Smith",
+            )
+        with col6:
+            organizer_email = st.text_input(
+                "Organizer Email *",
+                placeholder="jane@example.com",
+            )
+
+        # ── Reminder ──────────────────────────────────────────────────────
+        st.subheader("Reminder")
+        reminder_label = st.selectbox(
+            "Reminder Timing",
+            options=list(REMINDER_OPTIONS.keys()),
+            index=2,  # Default: 15 minutes
+            help="A VALARM will be embedded in the ICS file.",
+        )
+        reminder_minutes = REMINDER_OPTIONS[reminder_label]
+
+        # ── Campaign & Tracking ───────────────────────────────────────────
+        st.subheader("Campaign & Tracking")
+        col7, col8 = st.columns(2)
+        with col7:
+            campaign_id = st.text_input(
+                "Campaign Name / Internal Event ID",
+                value=tmpl.get("campaign_id", ""),
+                placeholder="e.g. Q3-WEBINAR-2024",
+                help="Stored in the ICS as X-CAMPAIGN-ID. Not visible to recipients.",
+            )
+        with col8:
+            landing_page_url = st.text_input(
+                "Landing-Page URL",
+                placeholder="https://example.com/event-page",
+                help="Appended to the event description and included in links.",
+            )
+
+        # UTM Parameters (expandable)
+        with st.expander("UTM Parameters (optional)"):
+            ucol1, ucol2, ucol3 = st.columns(3)
+            with ucol1:
+                utm_source = st.text_input("utm_source", placeholder="email")
+                utm_term = st.text_input("utm_term", placeholder="")
+            with ucol2:
+                utm_medium = st.text_input("utm_medium", placeholder="invite")
+                utm_content = st.text_input("utm_content", placeholder="")
+            with ucol3:
+                utm_campaign = st.text_input("utm_campaign", placeholder="q3-webinar-2024")
+
+        # ── HTML Button label ─────────────────────────────────────────────
+        st.subheader("HTML Button")
+        button_label = st.text_input(
+            "Button Label",
+            value="Add to Calendar",
+            help="The text shown on the Marketo-safe HTML calendar button.",
+        )
+
+        st.divider()
+        submitted = st.form_submit_button(
+            "🗓️ Generate Calendar Assets",
+            type="primary",
+            use_container_width=True,
+        )
+
+    # ── Process form submission ───────────────────────────────────────────────
+    if submitted:
+        # Build datetime objects
+        if all_day:
+            start_dt = datetime.combine(start_date, time(0, 0))
+            end_dt = datetime.combine(end_date, time(0, 0))
+        else:
+            start_dt = datetime.combine(start_date, start_time_val)
+            end_dt = datetime.combine(end_date, end_time_val)
+
+        # Build UTM-decorated landing page URL
+        utm_params = {
+            "utm_source": utm_source,
+            "utm_medium": utm_medium,
+            "utm_campaign": utm_campaign,
+            "utm_term": utm_term,
+            "utm_content": utm_content,
+        }
+        final_landing_url = build_utm_url(landing_page_url, utm_params)
+
+        # Assemble event data dict
+        event_data = {
+            "title": title,
+            "start_dt": start_dt,
+            "end_dt": end_dt,
+            "timezone": timezone,
+            "all_day": all_day,
+            "location": location,
+            "meeting_url": meeting_url,
+            "description": description,
+            "organizer_name": organizer_name,
+            "organizer_email": organizer_email,
+            "reminder_minutes": reminder_minutes,
+            "campaign_id": campaign_id,
+            "landing_page_url": final_landing_url,
+        }
+
+        # ── Validation ────────────────────────────────────────────────────
+        errors = validate_event(event_data)
+        if errors:
+            st.error("Please fix the following issues before generating:")
+            for e in errors:
+                st.markdown(f"- {e}")
+            st.stop()
+
+        # ── Generate outputs ──────────────────────────────────────────────
+        ics_content = build_ics(event_data)
+        google_url = build_google_url(event_data)
+        outlook_url = build_outlook_url(event_data)
+        html_button = build_html_button(event_data, button_label=button_label or "Add to Calendar")
+        preview_text = build_event_preview(event_data)
+
+        # ── Save to history (no PII) ──────────────────────────────────────
+        save_to_history({
+            "title": title,
+            "start_str": start_dt.strftime("%Y-%m-%d %H:%M"),
+            "end_str": end_dt.strftime("%Y-%m-%d %H:%M"),
+            "timezone": timezone,
+            "campaign_id": campaign_id,
+        })
+
+        # ── Results UI ────────────────────────────────────────────────────
+        st.success("✅ Calendar assets generated successfully!")
+        st.divider()
+
+        # ── Tab layout for outputs ────────────────────────────────────────
+        tab_preview, tab_ics, tab_google, tab_outlook, tab_html = st.tabs([
+            "📋 Preview",
+            "📁 ICS File",
+            "🗓️ Google Calendar",
+            "📧 Outlook",
+            "🖱️ HTML Button",
+        ])
+
+        # ── Preview tab ───────────────────────────────────────────────────
+        with tab_preview:
+            st.subheader("Event Preview")
+            st.text(preview_text)
+
+        # ── ICS tab ───────────────────────────────────────────────────────
+        with tab_ics:
+            st.subheader("Download ICS File")
+            st.caption(
+                "Works with Google Calendar, Microsoft Outlook, and Apple Calendar. "
+                "RFC 5545 compliant with proper DST handling."
+            )
+            safe_title = "".join(c if c.isalnum() or c in "-_ " else "_" for c in title)
+            filename = f"{safe_title.replace(' ', '_')}.ics"
+            st.download_button(
+                label="⬇️ Download ICS File",
+                data=ics_content.encode("utf-8"),
+                file_name=filename,
+                mime="text/calendar",
+                use_container_width=False,
+            )
+            with st.expander("Preview ICS content"):
+                st.code(ics_content, language="text")
+
+        # ── Google Calendar tab ───────────────────────────────────────────
+        with tab_google:
+            st.subheader("Google Calendar Link")
+            st.caption("Opens a pre-filled 'New Event' form in Google Calendar. No sign-in required to view.")
+            st.markdown(f"[Open in Google Calendar]({google_url})", unsafe_allow_html=False)
+            st.text_area(
+                "Plain-text Google Calendar URL",
+                value=google_url,
+                height=80,
+                key="google_url_text",
+            )
+            copy_button(google_url, label="📋 Copy Google Calendar URL", key="copy_google")
+
+        # ── Outlook tab ───────────────────────────────────────────────────
+        with tab_outlook:
+            st.subheader("Outlook Calendar Link")
+            st.caption(
+                "Opens a pre-filled 'New Event' form in Outlook Web App (outlook.live.com). "
+                "For Office 365, replace the base URL with outlook.office.com in the link below."
+            )
+            st.markdown(f"[Open in Outlook]({outlook_url})", unsafe_allow_html=False)
+            st.text_area(
+                "Plain-text Outlook URL",
+                value=outlook_url,
+                height=80,
+                key="outlook_url_text",
+            )
+            copy_button(outlook_url, label="📋 Copy Outlook URL", key="copy_outlook")
+
+            # Office 365 variant
+            office365_url = outlook_url.replace(
+                "https://outlook.live.com",
+                "https://outlook.office.com",
+            )
+            with st.expander("Office 365 / Work accounts"):
+                st.text_area(
+                    "Office 365 URL",
+                    value=office365_url,
+                    height=80,
+                    key="o365_url_text",
+                )
+                copy_button(office365_url, label="📋 Copy Office 365 URL", key="copy_o365")
+
+        # ── HTML Button tab ───────────────────────────────────────────────
+        with tab_html:
+            st.subheader("HTML Add to Calendar Button")
+            st.caption(
+                "Paste this snippet into a Marketo email template or landing page. "
+                "Uses only inline styles — no external CSS or JS dependencies. "
+                "Offers Google Calendar, Outlook, and ICS download options."
+            )
+
+            # Live preview
+            st.markdown("**Live Preview:**")
+            st.components.v1.html(html_button, height=160, scrolling=False)
+
+            # Raw HTML
+            st.markdown("**HTML Source:**")
+            st.text_area(
+                "HTML snippet",
+                value=html_button,
+                height=300,
+                key="html_button_text",
+            )
+            copy_button(html_button, label="📋 Copy HTML", key="copy_html")
+
+            # Landing page URL with UTM (if present)
+            if final_landing_url and final_landing_url != landing_page_url:
+                st.markdown("**Landing Page URL with UTM parameters:**")
+                st.text_area(
+                    "UTM URL",
+                    value=final_landing_url,
+                    height=60,
+                    key="utm_url_text",
+                )
+                copy_button(final_landing_url, label="📋 Copy UTM URL", key="copy_utm")
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    main()
