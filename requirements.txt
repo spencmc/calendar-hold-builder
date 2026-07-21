@@ -2,10 +2,12 @@
 # Python 3.11+ required (zoneinfo is stdlib in 3.9+; tzdata needed on some platforms)
 
 streamlit>=1.35.0
-tzdata>=2024.1          # IANA timezone data for zoneinfo (required on Windows & some Linux)
-requests>=2.31.0        # HTTP client for Google Docs API and LiteLLM proxy
-python-dateutil>=2.9.0  # Flexible date parsing for brief import
-pdfplumber>=0.11.0      # PDF text extraction for brief import
+tzdata>=2024.1             # IANA timezone data for zoneinfo (required on Windows & some Linux)
+requests>=2.31.0           # HTTP client for Google Docs API and LiteLLM proxy
+python-dateutil>=2.9.0     # Flexible date parsing for brief import
+pdfplumber>=0.11.0         # PDF text extraction for brief import
 streamlit-calendar>=1.0.3  # Visual calendar component for Team Calendar page
+slack-bolt>=1.18.0         # Slack bot framework (CalBot)
+python-dotenv>=1.0.0       # .env file support for CalBot
 pytest>=8.0.0
 pytest-cov>=5.0.0
