@@ -41,58 +41,44 @@ def extract_doc_id(url: str) -> str:
     return match.group(1)
 
 
-def fetch_doc_text(doc_url: str, api_key: str) -> str:
-    """Fetch the plain text content of a public Google Doc via the Docs API.
+def fetch_doc_text(doc_url: str, api_key: str = "") -> str:
+    """Fetch the plain text content of a public Google Doc using the export URL.
+
+    No API key or OAuth required — works for any doc shared as
+    'Anyone with the link can view'.
 
     Args:
         doc_url: Full Google Docs URL.
-        api_key: Google Docs API key.
+        api_key: Unused — kept for backwards compatibility.
 
     Returns:
         Plain text content of the document.
 
     Raises:
-        ValueError: If the URL is invalid, the doc is not accessible,
-                    or the API key is incorrect.
+        ValueError: If the URL is invalid or the doc is not accessible.
     """
     doc_id = extract_doc_id(doc_url)
 
-    api_url = f"https://docs.googleapis.com/v1/documents/{doc_id}"
-    params = {"key": api_key}
+    # Use the export endpoint — no authentication needed for public docs
+    export_url = f"https://docs.google.com/document/d/{doc_id}/export?format=txt"
 
     try:
-        response = requests.get(api_url, params=params, timeout=10)
+        response = requests.get(export_url, timeout=10)
     except requests.RequestException as e:
         raise ValueError(f"Network error fetching document: {e}")
 
     if response.status_code == 403:
         raise ValueError(
             "Access denied. Make sure the Google Doc is shared as "
-            "'Anyone with the link can view'."
+            "'Anyone with the link can view' before importing."
         )
     if response.status_code == 404:
         raise ValueError("Document not found. Check the URL and try again.")
-    if response.status_code == 400:
-        raise ValueError(
-            "Invalid API key or request. Double-check your API key in Settings."
-        )
     if not response.ok:
-        raise ValueError(f"Google API error {response.status_code}: {response.text[:200]}")
+        raise ValueError(f"Could not fetch document (error {response.status_code}). "
+                         "Make sure the doc is shared as 'Anyone with the link can view'.")
 
-    data = response.json()
-
-    # Extract plain text from the document's structural content
-    text_parts = []
-    for element in data.get("body", {}).get("content", []):
-        paragraph = element.get("paragraph")
-        if not paragraph:
-            continue
-        for pe in paragraph.get("elements", []):
-            tr = pe.get("textRun")
-            if tr:
-                text_parts.append(tr.get("content", ""))
-
-    return "".join(text_parts)
+    return response.text
 
 
 # ---------------------------------------------------------------------------
