@@ -22,7 +22,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from brief_utils import fetch_doc_text, parse_brief
+from brief_utils import fetch_doc_text, extract_pdf_text, parse_brief, parse_brief_with_ai
 from calendar_utils import (
     build_ics,
     build_google_url,
@@ -50,7 +50,9 @@ st.set_page_config(
 # ---------------------------------------------------------------------------
 
 HISTORY_FILE = Path("recent_events.json")
-MAX_HISTORY = 10  # Maximum number of recent events to store
+CALENDAR_FILE = Path("team_calendar.json")
+MAX_HISTORY = 10    # Recent events in sidebar
+MAX_CALENDAR = 500  # Max events stored in team calendar
 
 # ---------------------------------------------------------------------------
 # All IANA timezones (sorted, common ones first)
@@ -180,11 +182,7 @@ def load_history() -> list[dict]:
 
 
 def save_to_history(entry: dict) -> None:
-    """Persist a sanitized event entry (no PII) to local history.
-
-    Stores: title, event_type, start_str, end_str, timezone, campaign_id.
-    Does NOT store: organizer email, attendees, or meeting URLs.
-    """
+    """Persist a sanitized event entry (no PII) to local history sidebar."""
     safe_entry = {
         "title": entry.get("title", ""),
         "start_str": entry.get("start_str", ""),
@@ -199,7 +197,52 @@ def save_to_history(entry: dict) -> None:
     try:
         HISTORY_FILE.write_text(json.dumps(history, indent=2))
     except OSError:
-        pass  # Non-fatal — history is a convenience feature only
+        pass
+
+
+def save_to_team_calendar(entry: dict) -> None:
+    """Save a full event entry to the shared team calendar.
+
+    Stores everything needed for the calendar view except organizer email.
+    """
+    # Convert datetimes to ISO strings for JSON serialization
+    start_dt = entry.get("start_dt")
+    end_dt = entry.get("end_dt")
+
+    cal_entry = {
+        "title": entry.get("title", ""),
+        "event_type": entry.get("event_type", "Other"),
+        "start_iso": start_dt.isoformat() if start_dt else "",
+        "end_iso": end_dt.isoformat() if end_dt else "",
+        "timezone": entry.get("timezone", ""),
+        "all_day": entry.get("all_day", False),
+        "location": entry.get("location", ""),
+        "meeting_url": entry.get("meeting_url", ""),
+        "description": entry.get("description", ""),
+        "organizer_name": entry.get("organizer_name", ""),
+        "campaign_id": entry.get("campaign_id", ""),
+        "landing_page_url": entry.get("landing_page_url", ""),
+        "google_url": entry.get("google_url", ""),
+        "outlook_url": entry.get("outlook_url", ""),
+        "saved_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+    # Load existing, prepend new entry
+    if CALENDAR_FILE.exists():
+        try:
+            existing = json.loads(CALENDAR_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            existing = []
+    else:
+        existing = []
+
+    existing.insert(0, cal_entry)
+    existing = existing[:MAX_CALENDAR]
+
+    try:
+        CALENDAR_FILE.write_text(json.dumps(existing, indent=2))
+    except OSError:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -299,39 +342,87 @@ def main() -> None:
     if "brief_fields" not in st.session_state:
         st.session_state.brief_fields = {}
 
-    with st.expander("📄 Import from Google Doc Brief", expanded=False):
+    with st.expander("📄 Import from Brief (Google Doc or PDF)", expanded=False):
         st.caption(
-            "Paste a Google Doc link and your API key to auto-fill the form. "
-            "The doc must be shared as **'Anyone with the link can view'** — "
-            "open the doc in Google Docs, click Share, and set access to 'Anyone with the link'."
+            "Import a campaign brief to auto-fill the form using AI. "
+            "Supports Google Docs and PDF uploads. "
+            "Google Docs must be shared as **'Anyone with the link can view'** — "
+            "open the doc, click Share, and set access to 'Anyone with the link'."
         )
 
-        doc_url_input = st.text_input(
-            "Google Doc URL",
-            placeholder="https://docs.google.com/document/d/YOUR_DOC_ID/edit",
-            key="doc_url_input",
+        # Check if AI is configured via Streamlit secrets
+        _proxy_url = st.secrets.get("LITELLM_PROXY_URL", "")
+        _proxy_key = st.secrets.get("LITELLM_API_KEY", "")
+        _ai_available = bool(_proxy_url and _proxy_key)
+
+        if _ai_available:
+            st.success("✨ AI-powered parsing enabled", icon="🤖")
+        else:
+            st.info("Using standard parsing. AI parsing will be enabled once configured.", icon="ℹ️")
+
+        # Source selector
+        import_source = st.radio(
+            "Brief source",
+            options=["Google Doc URL", "Upload PDF"],
+            horizontal=True,
+            key="import_source",
         )
 
-        if st.button("🔍 Import Brief", key="import_brief_btn"):
-            if not doc_url_input.strip():
-                st.error("Please paste your Google Doc URL.")
-            else:
-                with st.spinner("Fetching and parsing your brief..."):
-                    try:
-                        doc_text = fetch_doc_text(doc_url_input.strip())
-                        fields = parse_brief(doc_text)
-                        st.session_state.brief_fields = fields
-                        st.success(
-                            "✅ Brief imported! Fields below have been pre-filled. "
-                            "Review and adjust before generating."
-                        )
-                        # Show what was found
-                        found = [k for k, v in fields.items() if v]
-                        st.caption(f"Detected: {', '.join(found)}")
-                    except ValueError as e:
-                        st.error(str(e))
-                    except Exception as e:
-                        st.error(f"Unexpected error: {e}")
+        brief_text = None
+
+        if import_source == "Google Doc URL":
+            doc_url_input = st.text_input(
+                "Google Doc URL",
+                placeholder="https://docs.google.com/document/d/YOUR_DOC_ID/edit",
+                key="doc_url_input",
+            )
+            if st.button("🔍 Import Brief", key="import_brief_btn"):
+                if not doc_url_input.strip():
+                    st.error("Please paste your Google Doc URL.")
+                else:
+                    with st.spinner("Fetching brief..."):
+                        try:
+                            brief_text = fetch_doc_text(doc_url_input.strip())
+                        except ValueError as e:
+                            st.error(str(e))
+                            brief_text = None
+
+        else:  # PDF upload
+            uploaded_pdf = st.file_uploader(
+                "Upload PDF brief",
+                type=["pdf"],
+                key="pdf_uploader",
+                help="Upload a campaign brief as a PDF file.",
+            )
+            if st.button("🔍 Import Brief", key="import_pdf_btn"):
+                if not uploaded_pdf:
+                    st.error("Please upload a PDF file.")
+                else:
+                    with st.spinner("Reading PDF..."):
+                        try:
+                            brief_text = extract_pdf_text(uploaded_pdf.read())
+                        except ValueError as e:
+                            st.error(str(e))
+                            brief_text = None
+
+        # Parse the brief text if we have it
+        if brief_text:
+            with st.spinner("Parsing brief with AI..." if _ai_available else "Parsing brief..."):
+                try:
+                    if _ai_available:
+                        fields = parse_brief_with_ai(brief_text, _proxy_url, _proxy_key)
+                    else:
+                        fields = parse_brief(brief_text)
+                    st.session_state.brief_fields = fields
+                    found = [k for k, v in fields.items() if v]
+                    st.success(
+                        f"✅ Brief imported! Detected: {', '.join(found)}. "
+                        "Review and adjust the form below before generating."
+                    )
+                except ValueError as e:
+                    st.error(str(e))
+                except Exception as e:
+                    st.error(f"Unexpected error: {e}")
 
     # Merge brief fields into template defaults (brief takes priority)
     brief = st.session_state.brief_fields
@@ -346,12 +437,26 @@ def main() -> None:
         # ── Event Details ──────────────────────────────────────────────────
         st.subheader("Event Details")
 
-        title = st.text_input(
-            "Event Title *",
-            value=tmpl.get("title", ""),
-            placeholder="e.g. Q3 Product Webinar",
-            help="Required. The title will appear in all calendar apps.",
-        )
+        col_title, col_type = st.columns([3, 1])
+        with col_title:
+            title = st.text_input(
+                "Event Title *",
+                value=tmpl.get("title", ""),
+                placeholder="e.g. Q3 Product Webinar",
+                help="Required. The title will appear in all calendar apps.",
+            )
+        with col_type:
+            event_type_options = ["Webinar", "In-Person Event", "Product Launch", "Customer Session", "Internal Meeting", "Other"]
+            # Pre-select based on template
+            default_type_index = 0
+            if selected_template in event_type_options:
+                default_type_index = event_type_options.index(selected_template)
+            event_type = st.selectbox(
+                "Event Type",
+                options=event_type_options,
+                index=default_type_index,
+                help="Used to color-code the event on the Team Calendar.",
+            )
 
         col_allday, _ = st.columns([1, 3])
         with col_allday:
@@ -569,7 +674,7 @@ def main() -> None:
         html_button = build_html_button(event_data, button_label=button_label or "Add to Calendar")
         preview_text = build_event_preview(event_data)
 
-        # ── Save to history (no PII) ──────────────────────────────────────
+        # ── Save to history sidebar + shared team calendar ────────────────
         save_to_history({
             "title": title,
             "start_str": start_dt.strftime("%Y-%m-%d %H:%M"),
@@ -577,9 +682,15 @@ def main() -> None:
             "timezone": timezone,
             "campaign_id": campaign_id,
         })
+        save_to_team_calendar({
+            **event_data,
+            "event_type": event_type,
+            "google_url": google_url,
+            "outlook_url": outlook_url,
+        })
 
         # ── Results UI ────────────────────────────────────────────────────
-        st.success("✅ Calendar assets generated successfully!")
+        st.success("✅ Calendar assets generated! Event added to the **Team Calendar**.")
         st.divider()
 
         # ── Tab layout for outputs ────────────────────────────────────────
