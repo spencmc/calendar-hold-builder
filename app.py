@@ -306,13 +306,9 @@ def main() -> None:
             "open the doc in Google Docs, click Share, and set access to 'Anyone with the link'."
         )
 
-        api_key_input = st.text_input(
-            "Google Docs API Key",
-            type="password",
-            placeholder="AIza...",
-            help="Your Google Docs API key from console.cloud.google.com",
-            key="api_key_input",
-        )
+        # API key is stored as a Streamlit secret — users never see it
+        _api_key = st.secrets.get("GOOGLE_DOCS_API_KEY", "")
+
         doc_url_input = st.text_input(
             "Google Doc URL",
             placeholder="https://docs.google.com/document/d/YOUR_DOC_ID/edit",
@@ -320,14 +316,14 @@ def main() -> None:
         )
 
         if st.button("🔍 Import Brief", key="import_brief_btn"):
-            if not api_key_input.strip():
-                st.error("Please enter your Google Docs API key.")
+            if not _api_key:
+                st.error("API key not configured. Ask your app administrator to add it in Streamlit settings.")
             elif not doc_url_input.strip():
                 st.error("Please paste your Google Doc URL.")
             else:
                 with st.spinner("Fetching and parsing your brief..."):
                     try:
-                        doc_text = fetch_doc_text(doc_url_input.strip(), api_key_input.strip())
+                        doc_text = fetch_doc_text(doc_url_input.strip(), _api_key)
                         fields = parse_brief(doc_text)
                         st.session_state.brief_fields = fields
                         st.success(
