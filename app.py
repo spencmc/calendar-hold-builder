@@ -22,6 +22,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from brief_utils import fetch_doc_text, parse_brief
 from calendar_utils import (
     build_ics,
     build_google_url,
@@ -293,6 +294,62 @@ def main() -> None:
     # ── Determine template defaults ──────────────────────────────────────────
     tmpl = TEMPLATES.get(selected_template, {})
 
+    # ── Import from Google Doc brief ─────────────────────────────────────────
+    # Store parsed brief fields in session state so they survive form rerender
+    if "brief_fields" not in st.session_state:
+        st.session_state.brief_fields = {}
+
+    with st.expander("📄 Import from Google Doc Brief", expanded=False):
+        st.caption(
+            "Paste a Google Doc link and your API key to auto-fill the form. "
+            "The doc must be shared as **'Anyone with the link can view'** — "
+            "open the doc in Google Docs, click Share, and set access to 'Anyone with the link'."
+        )
+
+        api_key_input = st.text_input(
+            "Google Docs API Key",
+            type="password",
+            placeholder="AIza...",
+            help="Your Google Docs API key from console.cloud.google.com",
+            key="api_key_input",
+        )
+        doc_url_input = st.text_input(
+            "Google Doc URL",
+            placeholder="https://docs.google.com/document/d/YOUR_DOC_ID/edit",
+            key="doc_url_input",
+        )
+
+        if st.button("🔍 Import Brief", key="import_brief_btn"):
+            if not api_key_input.strip():
+                st.error("Please enter your Google Docs API key.")
+            elif not doc_url_input.strip():
+                st.error("Please paste your Google Doc URL.")
+            else:
+                with st.spinner("Fetching and parsing your brief..."):
+                    try:
+                        doc_text = fetch_doc_text(doc_url_input.strip(), api_key_input.strip())
+                        fields = parse_brief(doc_text)
+                        st.session_state.brief_fields = fields
+                        st.success(
+                            "✅ Brief imported! Fields below have been pre-filled. "
+                            "Review and adjust before generating."
+                        )
+                        # Show what was found
+                        found = [k for k, v in fields.items() if v]
+                        st.caption(f"Detected: {', '.join(found)}")
+                    except ValueError as e:
+                        st.error(str(e))
+                    except Exception as e:
+                        st.error(f"Unexpected error: {e}")
+
+    # Merge brief fields into template defaults (brief takes priority)
+    brief = st.session_state.brief_fields
+    if brief:
+        for key in ["title", "location", "meeting_url", "description",
+                    "organizer_name", "organizer_email", "campaign_id", "landing_page_url"]:
+            if brief.get(key):
+                tmpl[key] = brief[key]
+
     # ── Form ─────────────────────────────────────────────────────────────────
     with st.form("event_form", clear_on_submit=False):
         # ── Event Details ──────────────────────────────────────────────────
@@ -309,19 +366,32 @@ def main() -> None:
         with col_allday:
             all_day = st.checkbox("All-day event", value=False)
 
+        # Use brief dates if available, otherwise default to 1 week from today
+        _default_start = date.today() + timedelta(days=7)
+        _default_end = date.today() + timedelta(days=7)
+        _default_start_time = time(10, 0)
+        _default_end_time = time(11, 0)
+
+        if brief.get("start_dt") and isinstance(brief["start_dt"], datetime):
+            _default_start = brief["start_dt"].date()
+            _default_start_time = brief["start_dt"].time().replace(second=0, microsecond=0)
+        if brief.get("end_dt") and isinstance(brief["end_dt"], datetime):
+            _default_end = brief["end_dt"].date()
+            _default_end_time = brief["end_dt"].time().replace(second=0, microsecond=0)
+
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("**Start Date & Time** *")
             start_date = st.date_input(
                 "Start date",
-                value=date.today() + timedelta(days=7),
+                value=_default_start,
                 label_visibility="collapsed",
                 key="start_date",
             )
             if not all_day:
                 start_time_val = st.time_input(
                     "Start time",
-                    value=time(10, 0),
+                    value=_default_start_time,
                     label_visibility="collapsed",
                     key="start_time",
                     step=300,  # 5-minute increments
@@ -333,14 +403,14 @@ def main() -> None:
             st.markdown("**End Date & Time** *")
             end_date = st.date_input(
                 "End date",
-                value=date.today() + timedelta(days=7),
+                value=_default_end,
                 label_visibility="collapsed",
                 key="end_date",
             )
             if not all_day:
                 end_time_val = st.time_input(
                     "End time",
-                    value=time(11, 0),
+                    value=_default_end_time,
                     label_visibility="collapsed",
                     key="end_time",
                     step=300,
