@@ -22,6 +22,7 @@ from pathlib import Path
 
 import streamlit as st
 
+import db
 from brief_utils import fetch_doc_text, extract_pdf_text, parse_brief, parse_brief_with_ai
 from calendar_utils import (
     build_ics,
@@ -201,11 +202,7 @@ def save_to_history(entry: dict) -> None:
 
 
 def save_to_team_calendar(entry: dict) -> None:
-    """Save a full event entry to the shared team calendar.
-
-    Stores everything needed for the calendar view except organizer email.
-    """
-    # Convert datetimes to ISO strings for JSON serialization
+    """Save a full event entry to Supabase shared team calendar."""
     start_dt = entry.get("start_dt")
     end_dt = entry.get("end_dt")
 
@@ -224,25 +221,10 @@ def save_to_team_calendar(entry: dict) -> None:
         "landing_page_url": entry.get("landing_page_url", ""),
         "google_url": entry.get("google_url", ""),
         "outlook_url": entry.get("outlook_url", ""),
-        "saved_at": datetime.utcnow().isoformat() + "Z",
+        "source": "app",
     }
 
-    # Load existing, prepend new entry
-    if CALENDAR_FILE.exists():
-        try:
-            existing = json.loads(CALENDAR_FILE.read_text())
-        except (json.JSONDecodeError, OSError):
-            existing = []
-    else:
-        existing = []
-
-    existing.insert(0, cal_entry)
-    existing = existing[:MAX_CALENDAR]
-
-    try:
-        CALENDAR_FILE.write_text(json.dumps(existing, indent=2))
-    except OSError:
-        pass
+    db.save_event(cal_entry)
 
 
 # ---------------------------------------------------------------------------

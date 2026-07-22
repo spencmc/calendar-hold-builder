@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 slack_bot.py
 ------------
@@ -42,6 +44,7 @@ from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from dotenv import load_dotenv
 
+import db
 from brief_utils import (
     fetch_doc_text,
     extract_pdf_text,
@@ -78,9 +81,6 @@ LITELLM_PROXY_URL = os.environ.get("LITELLM_PROXY_URL", "")
 LITELLM_API_KEY = os.environ.get("LITELLM_API_KEY", "")
 STREAMLIT_APP_URL = os.environ.get("STREAMLIT_APP_URL", "")
 
-CALENDAR_FILE = Path("team_calendar.json")
-MAX_CALENDAR = 500
-
 # Event type → color mapping (matches the Streamlit app)
 EVENT_COLORS = {
     "Webinar":          "#0066CC",
@@ -112,7 +112,7 @@ def is_google_doc_url(text: str) -> str | None:
 
 
 def save_to_team_calendar(event_data: dict, google_url: str, outlook_url: str) -> None:
-    """Save the parsed event to the shared team_calendar.json."""
+    """Save the parsed event to Supabase shared team calendar."""
     start_dt = event_data.get("start_dt")
     end_dt = event_data.get("end_dt")
 
@@ -131,25 +131,14 @@ def save_to_team_calendar(event_data: dict, google_url: str, outlook_url: str) -
         "landing_page_url": event_data.get("landing_page_url", ""),
         "google_url": google_url,
         "outlook_url": outlook_url,
-        "saved_at": datetime.utcnow().isoformat() + "Z",
         "source": "slack",
     }
 
-    existing = []
-    if CALENDAR_FILE.exists():
-        try:
-            existing = json.loads(CALENDAR_FILE.read_text())
-        except (json.JSONDecodeError, OSError):
-            existing = []
-
-    existing.insert(0, entry)
-    existing = existing[:MAX_CALENDAR]
-
-    try:
-        CALENDAR_FILE.write_text(json.dumps(existing, indent=2))
-        logger.info(f"Saved event to team calendar: {entry['title']}")
-    except OSError as e:
-        logger.warning(f"Could not save to team calendar: {e}")
+    ok = db.save_event(entry)
+    if ok:
+        logger.info(f"Saved event to Supabase: {entry['title']}")
+    else:
+        logger.warning(f"Could not save event to Supabase (check SUPABASE_URL/SUPABASE_KEY in .env)")
 
 
 def format_datetime(dt: datetime | None, tz: str = "") -> str:
@@ -255,53 +244,81 @@ def build_slack_blocks(fields: dict, google_url: str, outlook_url: str) -> list:
     return blocks
 
 
+def normalise_fields(fields: dict, say, thread_ts: str = None) -> dict:
+    """Apply defaults and warn if key fields are missing."""
+    if not fields.get("timezone"):
+        fields["timezone"] = "America/Chicago"
+    if "all_day" not in fields:
+        fields["all_day"] = False
+
+    if not fields.get("start_dt"):
+        from datetime import date, timedelta, time as dtime
+        tomorrow = datetime.combine(date.today() + timedelta(days=1), dtime(10, 0))
+        fields["start_dt"] = tomorrow
+        fields["end_dt"] = tomorrow.replace(hour=11)
+        say(
+            text="⚠️ No date found — defaulting to tomorrow at 10am CT. Please update the calendar link.",
+            thread_ts=thread_ts,
+        )
+
+    if not fields.get("end_dt"):
+        fields["end_dt"] = fields["start_dt"].replace(
+            hour=min(fields["start_dt"].hour + 1, 23)
+        )
+    return fields
+
+
 def process_brief(text: str, say, thread_ts: str = None) -> None:
-    """Parse brief text and post the calendar hold response."""
+    """Parse brief text and post calendar hold(s) as a response."""
     # Use AI if configured, otherwise fall back to regex
     try:
         if LITELLM_PROXY_URL and LITELLM_API_KEY:
             logger.info("Parsing brief with AI...")
-            fields = parse_brief_with_ai(text, LITELLM_PROXY_URL, LITELLM_API_KEY)
+            all_fields = parse_brief_with_ai(text, LITELLM_PROXY_URL, LITELLM_API_KEY)
         else:
             logger.info("Parsing brief with regex (AI not configured)...")
-            fields = parse_brief(text)
+            all_fields = [parse_brief(text)]  # wrap in list for uniform handling
     except Exception as e:
+        say(text=f"⚠️ Could not parse the brief: {e}", thread_ts=thread_ts)
+        return
+
+    if not all_fields:
         say(
-            text=f"⚠️ Could not parse the brief: {e}",
+            text="⚠️ I couldn't find any event details in that brief.",
             thread_ts=thread_ts,
         )
         return
 
-    # Check we got at least a title
-    if not fields.get("title"):
+    # Announce how many events were found
+    count = len(all_fields)
+    if count > 1:
         say(
-            text="⚠️ I couldn't find event details in that brief. Make sure it contains an event name, date, and time.",
+            text=f"📋 Found *{count} events* in this brief — generating a hold for each one...",
             thread_ts=thread_ts,
         )
-        return
 
-    # Build calendar URLs
-    try:
-        google_url = build_google_url(fields)
-        outlook_url = build_outlook_url(fields)
-    except Exception as e:
+    for i, fields in enumerate(all_fields, 1):
+        if not fields.get("title"):
+            say(text=f"⚠️ Event {i}: couldn't find a title — skipping.", thread_ts=thread_ts)
+            continue
+
+        fields = normalise_fields(fields, say, thread_ts)
+
+        try:
+            google_url = build_google_url(fields)
+            outlook_url = build_outlook_url(fields)
+        except Exception as e:
+            say(text=f"⚠️ Event {i} ({fields.get('title')}): could not build links — {e}", thread_ts=thread_ts)
+            continue
+
+        save_to_team_calendar(fields, google_url, outlook_url)
+        blocks = build_slack_blocks(fields, google_url, outlook_url)
         say(
-            text=f"⚠️ Could not build calendar links: {e}",
+            text=f"📅 Calendar hold {i}/{count}: {fields.get('title', 'your event')}",
+            blocks=blocks,
             thread_ts=thread_ts,
         )
-        return
-
-    # Save to team calendar
-    save_to_team_calendar(fields, google_url, outlook_url)
-
-    # Post response
-    blocks = build_slack_blocks(fields, google_url, outlook_url)
-    say(
-        text=f"📅 Calendar hold created for: {fields.get('title', 'your event')}",
-        blocks=blocks,
-        thread_ts=thread_ts,
-    )
-    logger.info(f"Posted calendar hold for: {fields.get('title')}")
+        logger.info(f"Posted calendar hold {i}/{count}: {fields.get('title')}")
 
 
 # ---------------------------------------------------------------------------

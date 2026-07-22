@@ -1,0 +1,23 @@
+# Secrets — never commit
+.env
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local data files
+recent_events.json
+team_calendar.json
+
+# macOS
+.DS_Store
+
+# Virtual envs
+venv/
+.venv/
+env/

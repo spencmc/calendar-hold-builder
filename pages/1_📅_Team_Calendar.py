@@ -6,11 +6,16 @@ Team Calendar page — shows all created calendar holds on a shared visual calen
 Color coded by event type. Click an event to see details and add-to-calendar links.
 """
 
-import json
+import sys
+import os
 from pathlib import Path
 from datetime import datetime
 
 import streamlit as st
+
+# Make sure db.py (in the parent folder) is importable from this page
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import db
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -25,8 +30,6 @@ st.set_page_config(
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-
-CALENDAR_FILE = Path("team_calendar.json")
 
 # Color palette by event type
 EVENT_COLORS = {
@@ -45,13 +48,8 @@ DEFAULT_COLOR = "#17A2B8"
 # ---------------------------------------------------------------------------
 
 def load_calendar_events() -> list[dict]:
-    """Load all saved calendar holds from the shared JSON file."""
-    if CALENDAR_FILE.exists():
-        try:
-            return json.loads(CALENDAR_FILE.read_text())
-        except (json.JSONDecodeError, OSError):
-            return []
-    return []
+    """Load all saved calendar holds from Supabase."""
+    return db.load_events()
 
 
 def format_dt(dt_str: str, all_day: bool = False) -> str:
