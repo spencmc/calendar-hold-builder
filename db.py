@@ -99,14 +99,7 @@ def save_event(entry: dict) -> bool:
 
 
 def load_events(limit: int = 500) -> list[dict]:
-    """Fetch all calendar events from Supabase, newest first.
-
-    Args:
-        limit: Maximum number of events to return.
-
-    Returns:
-        List of event dicts.
-    """
+    """Fetch all calendar events from Supabase, newest first."""
     url, key = _get_config()
     if not url or not key:
         return []
@@ -123,3 +116,55 @@ def load_events(limit: int = 500) -> list[dict]:
         return []
     except Exception:
         return []
+
+
+def delete_event(event_id: str) -> bool:
+    """Delete a calendar event by its UUID.
+
+    Args:
+        event_id: The UUID of the event to delete.
+
+    Returns:
+        True on success, False on failure.
+    """
+    url, key = _get_config()
+    if not url or not key:
+        return False
+
+    try:
+        resp = requests.delete(
+            _base_url(),
+            headers=_headers(),
+            params={"id": f"eq.{event_id}"},
+            timeout=10,
+        )
+        return resp.ok
+    except Exception:
+        return False
+
+
+def update_event(event_id: str, data: dict) -> bool:
+    """Update fields on an existing calendar event.
+
+    Args:
+        event_id: The UUID of the event to update.
+        data: Dict of fields to update (only provided keys are changed).
+
+    Returns:
+        True on success, False on failure.
+    """
+    url, key = _get_config()
+    if not url or not key:
+        return False
+
+    try:
+        resp = requests.patch(
+            _base_url(),
+            headers=_headers(),
+            params={"id": f"eq.{event_id}"},
+            json=data,
+            timeout=10,
+        )
+        return resp.ok
+    except Exception:
+        return False
