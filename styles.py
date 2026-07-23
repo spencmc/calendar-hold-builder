@@ -130,38 +130,9 @@ def load_css() -> None:
     color: white !important;
 }}
 
-/* ── Sidebar nav ────────────────────────────────────────────────────── */
+/* ── Hide auto-generated sidebar nav (replaced by st.page_link) ─────── */
 [data-testid="stSidebarNav"] {{
-    padding-top: 0 !important;
-}}
-[data-testid="stSidebarNav"] ul {{
-    padding: 0 !important;
-    margin: 0 !important;
-}}
-
-/* Hide the main "app" nav item — it's replaced by the brand block below */
-[data-testid="stSidebarNav"] ul li:first-child {{
     display: none !important;
-}}
-
-[data-testid="stSidebarNav"] a {{
-    border-radius: 8px !important;
-    padding: 7px 12px !important;
-    color: rgba(255,255,255,0.65) !important;
-    text-decoration: none !important;
-    transition: all 0.15s ease !important;
-    display: flex !important;
-    align-items: center !important;
-}}
-[data-testid="stSidebarNav"] a:hover {{
-    background: rgba(255,255,255,0.08) !important;
-    color: white !important;
-}}
-[data-testid="stSidebarNav"] a[aria-current="page"] {{
-    background: rgba(239,77,54,0.18) !important;
-    color: white !important;
-    border-left: 3px solid {ACCENT} !important;
-    padding-left: 9px !important;
 }}
 
 /* ── st.page_link in sidebar ────────────────────────────────────────── */
