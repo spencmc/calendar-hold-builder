@@ -8,6 +8,8 @@ Team Calendar page — shows all created calendar holds on a shared visual calen
 Color coded by event type. Click an event to see details, edit, or delete it.
 """
 
+from __future__ import annotations
+
 import sys
 import zoneinfo
 from pathlib import Path
@@ -15,32 +17,28 @@ from datetime import datetime, date, time
 
 import streamlit as st
 
-# Make sure db.py (in the parent folder) is importable from this page
+# Make db.py and styles.py importable from the pages/ sub-directory
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import db
+from styles import load_css, page_header, section_header, EVENT_COLORS as _EC
 
 # ---------------------------------------------------------------------------
 # Page config
 # ---------------------------------------------------------------------------
 
 st.set_page_config(
-    page_title="Team Calendar — Marketing Calendar Hold Builder",
+    page_title="Team Calendar — Calendar Hold Builder",
     page_icon="📅",
     layout="wide",
 )
+
+load_css()
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-EVENT_COLORS = {
-    "Webinar":          "#0066CC",
-    "In-Person Event":  "#28A745",
-    "Product Launch":   "#FF6B35",
-    "Customer Session": "#9B59B6",
-    "Internal Meeting": "#6C757D",
-    "Other":            "#17A2B8",
-}
+EVENT_COLORS  = _EC  # imported from styles.py — single source of truth
 DEFAULT_COLOR = "#17A2B8"
 EVENT_TYPE_OPTIONS = list(EVENT_COLORS.keys())
 
@@ -98,8 +96,11 @@ if "confirm_delete_id" not in st.session_state:
 # Main page
 # ---------------------------------------------------------------------------
 
-st.title("📅 Team Calendar")
-st.caption("All marketing calendar holds created by the team, in one place.")
+page_header(
+    "Team Calendar",
+    "Every hold, in one place. Click any event to view details, edit, or delete.",
+    logo="🗓️",
+)
 
 events = db.load_events()
 
