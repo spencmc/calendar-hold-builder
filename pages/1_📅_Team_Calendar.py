@@ -1,12 +1,6 @@
-from __future__ import annotations
-
-"""
-pages/1_📅_Team_Calendar.py
-----------------------------
-Team Calendar page — shows all created calendar holds on a shared visual calendar.
-
-Color coded by event type. Click an event to see details, edit, or delete it.
-"""
+# pages/1_📅_Team_Calendar.py
+# Team Calendar — shows all calendar holds on a shared visual calendar.
+# Click any event to view details, edit, or delete.
 
 from __future__ import annotations
 

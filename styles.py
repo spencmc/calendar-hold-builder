@@ -381,143 +381,63 @@ footer   {{ visibility: hidden; }}
 
 def page_header(title: str, subtitle: str = "", logo: str = "📅") -> None:
     """Dark gradient hero header — call once at the top of each page."""
-    st.markdown(f"""
-<div style="
-    background: linear-gradient(135deg, {DARK} 0%, {DARK_2} 100%);
-    border-radius: 16px;
-    padding: 28px 36px;
-    margin-bottom: 28px;
-    border: 1px solid rgba(255,255,255,0.07);
-    box-shadow: 0 4px 24px rgba(0,0,0,0.12);
-">
-    <div style="display:flex; align-items:center; gap:18px;">
-        <div style="font-size:2.8rem; line-height:1; flex-shrink:0; user-select:none;">{logo}</div>
-        <div>
-            <div style="
-                color: white;
-                font-size: 1.6rem;
-                font-weight: 700;
-                letter-spacing: -0.02em;
-                font-family: 'Inter', sans-serif;
-                line-height: 1.15;
-            ">{title}</div>
-            <div style="
-                color: rgba(255,255,255,0.45);
-                font-size: 0.88rem;
-                margin-top: 6px;
-                font-family: 'Inter', sans-serif;
-            ">{subtitle}</div>
-        </div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+    st.markdown(
+        f'<div style="background:linear-gradient(135deg,{DARK} 0%,{DARK_2} 100%);border-radius:16px;padding:28px 36px;margin-bottom:28px;border:1px solid rgba(255,255,255,0.07);box-shadow:0 4px 24px rgba(0,0,0,0.12);">'
+        f'<div style="display:flex;align-items:center;gap:18px;">'
+        f'<div style="font-size:2.8rem;line-height:1;flex-shrink:0;">{logo}</div>'
+        f'<div>'
+        f'<div style="color:white;font-size:1.6rem;font-weight:700;letter-spacing:-0.02em;font-family:Inter,sans-serif;line-height:1.15;">{title}</div>'
+        f'<div style="color:rgba(255,255,255,0.45);font-size:0.88rem;margin-top:6px;font-family:Inter,sans-serif;">{subtitle}</div>'
+        f'</div></div></div>',
+        unsafe_allow_html=True,
+    )
 
 
 def section_header(title: str, icon: str = "", subtitle: str = "") -> None:
     """Red-accented section heading — replaces st.subheader() inside forms."""
-    icon_html = f'<span style="margin-right:6px;">{icon}</span>' if icon else ""
-    sub_html  = (
-        f'<div style="color:{MUTED};font-size:0.8rem;margin-top:3px;">{subtitle}</div>'
-        if subtitle else ""
+    icon_part = f"{icon} " if icon else ""
+    sub_part  = f'<div style="color:{MUTED};font-size:0.8rem;margin-top:3px;">{subtitle}</div>' if subtitle else ""
+    st.markdown(
+        f'<div style="display:flex;align-items:flex-start;gap:12px;margin:28px 0 14px 0;">'
+        f'<div style="width:4px;min-height:26px;background:{ACCENT};border-radius:2px;flex-shrink:0;margin-top:3px;"></div>'
+        f'<div><div style="font-weight:700;font-size:0.82rem;color:{TEXT};text-transform:uppercase;letter-spacing:0.06em;font-family:Inter,sans-serif;">{icon_part}{title}</div>{sub_part}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
     )
-    st.markdown(f"""
-<div style="display:flex; align-items:flex-start; gap:12px; margin:28px 0 14px 0;">
-    <div style="
-        width: 4px; min-height: 26px;
-        background: {ACCENT};
-        border-radius: 2px;
-        flex-shrink: 0; margin-top: 3px;
-    "></div>
-    <div>
-        <div style="
-            font-weight: 700;
-            font-size: 0.82rem;
-            color: {TEXT};
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            font-family: 'Inter', sans-serif;
-        ">{icon_html}{title}</div>
-        {sub_html}
-    </div>
-</div>
-""", unsafe_allow_html=True)
 
 
 def sidebar_brand() -> None:
     """Product brand block at the top of the sidebar content area."""
-    st.markdown(f"""
-<div style="
-    padding: 16px 2px 16px 2px;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
-    margin-bottom: 4px;
-">
-    <div style="display:flex; align-items:center; gap:10px;">
-        <div style="
-            background: {ACCENT};
-            border-radius: 10px;
-            width: 38px; height: 38px;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 1.35rem;
-            flex-shrink: 0;
-            box-shadow: 0 4px 12px rgba(239,77,54,0.35);
-        ">📅</div>
-        <div>
-            <div style="
-                color: white;
-                font-weight: 700;
-                font-size: 0.92rem;
-                font-family: 'Inter', sans-serif;
-                line-height: 1.2;
-            ">Calendar Hold</div>
-            <div style="
-                color: rgba(255,255,255,0.35);
-                font-size: 0.7rem;
-                font-family: 'Inter', sans-serif;
-            ">Builder · G2 Marketing</div>
-        </div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+    st.markdown(
+        f'<div style="padding:16px 2px;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:4px;">'
+        f'<div style="display:flex;align-items:center;gap:10px;">'
+        f'<div style="background:{ACCENT};border-radius:10px;width:38px;height:38px;display:flex;align-items:center;justify-content:center;font-size:1.35rem;flex-shrink:0;box-shadow:0 4px 12px rgba(239,77,54,0.35);">📅</div>'
+        f'<div>'
+        f'<div style="color:white;font-weight:700;font-size:0.92rem;font-family:Inter,sans-serif;line-height:1.2;">Calendar Hold</div>'
+        f'<div style="color:rgba(255,255,255,0.35);font-size:0.7rem;font-family:Inter,sans-serif;">Builder · G2 Marketing</div>'
+        f'</div></div></div>',
+        unsafe_allow_html=True,
+    )
 
 
 def sidebar_label(text: str) -> None:
     """Small uppercase section label inside the sidebar."""
-    st.markdown(f"""
-<div style="
-    font-size: 0.68rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: rgba(255,255,255,0.3);
-    margin: 20px 0 8px 0;
-    font-family: 'Inter', sans-serif;
-">{text}</div>
-""", unsafe_allow_html=True)
+    st.markdown(
+        f'<div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:rgba(255,255,255,0.3);margin:20px 0 8px 0;font-family:Inter,sans-serif;">{text}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def results_banner(title: str, subtitle: str = "") -> None:
     """Green success banner shown after generating calendar assets."""
-    st.markdown(f"""
-<div style="
-    background: linear-gradient(135deg, #064E3B 0%, #065F46 100%);
-    border-radius: 12px;
-    padding: 18px 24px;
-    margin: 20px 0;
-    border: 1px solid rgba(255,255,255,0.08);
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-">
-    <div style="font-size: 1.8rem; flex-shrink:0; line-height:1;">📅</div>
-    <div>
-        <div style="color:white; font-weight:700; font-size:0.95rem;
-                    font-family:'Inter',sans-serif;">{title}</div>
-        <div style="color:rgba(255,255,255,0.55); font-size:0.82rem;
-                    margin-top:3px; font-family:'Inter',sans-serif;">{subtitle}</div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+    sub = f'<div style="color:rgba(255,255,255,0.55);font-size:0.82rem;margin-top:3px;font-family:Inter,sans-serif;">{subtitle}</div>' if subtitle else ""
+    st.markdown(
+        f'<div style="background:linear-gradient(135deg,#064E3B 0%,#065F46 100%);border-radius:12px;padding:18px 24px;margin:20px 0;border:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;gap:16px;box-shadow:0 4px 16px rgba(0,0,0,0.12);">'
+        f'<div style="font-size:1.8rem;flex-shrink:0;line-height:1;">📅</div>'
+        f'<div><div style="color:white;font-weight:700;font-size:0.95rem;font-family:Inter,sans-serif;">{title}</div>{sub}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def event_type_badge(event_type: str) -> str:

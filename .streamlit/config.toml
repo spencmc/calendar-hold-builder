@@ -5,5 +5,8 @@ secondaryBackgroundColor = "#FFFFFF"
 textColor         = "#1A1A2E"
 font              = "sans serif"
 
+[runner]
+magicEnabled = false
+
 [browser]
 gatherUsageStats = false
