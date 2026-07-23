@@ -131,6 +131,19 @@ def load_css() -> None:
 }}
 
 /* ── Sidebar nav ────────────────────────────────────────────────────── */
+[data-testid="stSidebarNav"] {{
+    padding-top: 0 !important;
+}}
+[data-testid="stSidebarNav"] ul {{
+    padding: 0 !important;
+    margin: 0 !important;
+}}
+
+/* Hide the main "app" nav item — it's replaced by the brand block below */
+[data-testid="stSidebarNav"] ul li:first-child {{
+    display: none !important;
+}}
+
 [data-testid="stSidebarNav"] a {{
     border-radius: 8px !important;
     padding: 7px 12px !important;
@@ -149,20 +162,6 @@ def load_css() -> None:
     color: white !important;
     border-left: 3px solid {ACCENT} !important;
     padding-left: 9px !important;
-}}
-
-/* Rename "app" → "Create a Hold" in sidebar nav.
-   Targets the text node inside the first nav item's anchor. */
-[data-testid="stSidebarNav"] ul li:first-child a span:last-child {{
-    font-size: 0 !important;
-    line-height: 0 !important;
-}}
-[data-testid="stSidebarNav"] ul li:first-child a span:last-child::after {{
-    content: "Create a Hold";
-    font-size: 14px !important;
-    font-weight: 500 !important;
-    line-height: 1.4 !important;
-    color: inherit;
 }}
 
 /* ── Primary CTA button ─────────────────────────────────────────────── */
@@ -409,12 +408,12 @@ def section_header(title: str, icon: str = "", subtitle: str = "") -> None:
 def sidebar_brand() -> None:
     """Product brand block at the top of the sidebar content area."""
     st.markdown(
-        f'<div style="padding:16px 2px;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:4px;">'
+        f'<div style="padding:12px 4px 14px 4px;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:8px;">'
         f'<div style="display:flex;align-items:center;gap:10px;">'
-        f'<div style="background:{ACCENT};border-radius:10px;width:38px;height:38px;display:flex;align-items:center;justify-content:center;font-size:1.35rem;flex-shrink:0;box-shadow:0 4px 12px rgba(239,77,54,0.35);">📅</div>'
+        f'<div style="background:{ACCENT};border-radius:9px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0;box-shadow:0 3px 10px rgba(239,77,54,0.35);">📅</div>'
         f'<div>'
-        f'<div style="color:white;font-weight:700;font-size:0.92rem;font-family:Inter,sans-serif;line-height:1.2;">Calendar Hold</div>'
-        f'<div style="color:rgba(255,255,255,0.35);font-size:0.7rem;font-family:Inter,sans-serif;">Builder · G2 Marketing</div>'
+        f'<div style="color:white;font-weight:700;font-size:0.88rem;font-family:Inter,sans-serif;line-height:1.2;letter-spacing:-0.01em;">Calendar Hold Builder</div>'
+        f'<div style="color:rgba(255,255,255,0.3);font-size:0.68rem;font-family:Inter,sans-serif;margin-top:1px;">G2 Marketing</div>'
         f'</div></div></div>',
         unsafe_allow_html=True,
     )
