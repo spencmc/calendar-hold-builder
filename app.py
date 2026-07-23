@@ -213,6 +213,12 @@ def main() -> None:
     with st.sidebar:
         sidebar_brand()
 
+        # Navigation
+        st.page_link("app.py", label="Create a Hold", icon="🗓️")
+        st.page_link("pages/1_📅_Team_Calendar.py", label="Team Calendar", icon="📅")
+
+        st.divider()
+
         # Quick-pick template buttons
         sidebar_label("Quick Templates")
         tmpl_items = list(TEMPLATE_ICONS.items())

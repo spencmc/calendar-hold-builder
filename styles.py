@@ -164,6 +164,28 @@ def load_css() -> None:
     padding-left: 9px !important;
 }}
 
+/* ── st.page_link in sidebar ────────────────────────────────────────── */
+[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"] {{
+    border-radius: 8px !important;
+    color: rgba(255,255,255,0.7) !important;
+    padding: 6px 10px !important;
+    font-size: 0.875rem !important;
+    font-weight: 500 !important;
+    display: flex !important;
+    align-items: center !important;
+    transition: all 0.15s ease !important;
+    text-decoration: none !important;
+}}
+[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"]:hover {{
+    background: rgba(255,255,255,0.08) !important;
+    color: white !important;
+}}
+[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"][aria-current="page"] {{
+    background: rgba(239,77,54,0.18) !important;
+    color: white !important;
+    border-left: 3px solid {ACCENT} !important;
+}}
+
 /* ── Primary CTA button ─────────────────────────────────────────────── */
 .stFormSubmitButton > button,
 button[kind="primary"] {{

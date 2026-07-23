@@ -28,6 +28,11 @@ st.set_page_config(
 
 load_css()
 
+# Sidebar navigation
+with st.sidebar:
+    st.page_link("app.py", label="Create a Hold", icon="🗓️")
+    st.page_link("pages/1_📅_Team_Calendar.py", label="Team Calendar", icon="📅")
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
