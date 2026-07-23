@@ -206,7 +206,7 @@ def main() -> None:
     # ── Hero header ──────────────────────────────────────────────────────────
     page_header(
         "Calendar Hold Builder",
-        "Grab the date before someone else does. 📌",
+        "Grab the date before someone else does. 🎯",
     )
 
     # ── Sidebar ──────────────────────────────────────────────────────────────
